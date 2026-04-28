@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- React / ReactDOM / Babel Standalone CDN -->
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- JSX 코드 -->
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+// ═══════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════
+
+const PIPELINE_STAGES = [
+  { id:"S1", code:"PROFILE",    label:"규제 프로파일",       sub:"Compliance DNA 생성",            color:"#00bcd4" },
+  { id:"S2", code:"GAP",        label:"갭 분석",              sub:"17도메인 × 규제 매핑",            color:"#ff7043" },
+  { id:"S3", code:"SOLUTION",   label:"솔루션 발굴",          sub:"도메인별 최적 솔루션 매핑",       color:"#66bb6a" },
+  { id:"S4", code:"COMPONENT",  label:"OSCAL 컴포넌트",       sub:"솔루션 → OSCAL Component.json",  color:"#ab47bc" },
+  { id:"S5", code:"CONTRACT",   label:"API 컨트랙트",         sub:"OpenAPI + OSCAL 통합 계약",       color:"#ffa726" },
+  { id:"S6", code:"VERIFY",     label:"자동 검증",            sub:"실시간 준수 확인 루프",           color:"#26c6da" },
+  { id:"S7", code:"MONITOR",    label:"지속 모니터링",        sub:"Living Policy 상태 유지",         color:"#ec407a" },
+];
+
+const SOLUTIONS_DB = {
+  D01: [
+    { name:"ServiceNow GRC",    tier:1, type:"SaaS",   api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001"], free:false, desc:"위험 관리·정책 라이프사이클 통합" },
+    { name:"Archer GRC",        tier:1, type:"SaaS",   api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001","PCI"], free:false, desc:"엔터프라이즈 위험 관리" },
+    { name:"OpenRMF",           tier:2, type:"OSS",    api:"REST",    oscal:"native",     coverage:["NIST800-53"], free:true,  desc:"OSCAL 네이티브 오픈소스 GRC" },
+  ],
+  D03: [
+    { name:"Microsoft Entra ID",tier:1, type:"SaaS",   api:"MS Graph",oscal:"component",  coverage:["SOC2","ISO27001","PCI"], free:false, desc:"클라우드 IAM, MFA, 조건부 접근" },
+    { name:"Okta",              tier:1, type:"SaaS",   api:"REST",    oscal:"component",  coverage:["SOC2","PCI"], free:false, desc:"SSO, MFA, 수명주기 관리" },
+    { name:"CyberArk PAM",      tier:1, type:"On-Prem",api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001","PCI","CMMC"], free:false, desc:"특권 접근 관리" },
+    { name:"Keycloak",          tier:2, type:"OSS",    api:"REST",    oscal:"component",  coverage:["ISO27001"], free:true, desc:"오픈소스 IAM·SSO" },
+  ],
+  D04: [
+    { name:"Palo Alto NGFW",    tier:1, type:"HW/SW",  api:"REST/XML",oscal:"component",  coverage:["PCI","ISO27001"], free:false, desc:"차세대 방화벽·네트워크 분리" },
+    { name:"Cisco ISE",         tier:1, type:"On-Prem",api:"REST",    oscal:"component",  coverage:["PCI","CMMC"], free:false, desc:"네트워크 접근 통제(NAC)" },
+    { name:"pfSense",           tier:2, type:"OSS",    api:"REST",    oscal:"component",  coverage:["ISO27001"], free:true, desc:"오픈소스 방화벽" },
+  ],
+  D05: [
+    { name:"CrowdStrike Falcon", tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001","PCI"], free:false, desc:"EDR·XDR 엔드포인트 방어" },
+    { name:"Microsoft Defender", tier:1, type:"SaaS",  api:"MS Graph",oscal:"component",  coverage:["SOC2","ISO27001"], free:false, desc:"통합 엔드포인트 보안" },
+    { name:"Wazuh",              tier:2, type:"OSS",   api:"REST",    oscal:"component",  coverage:["PCI","ISO27001"], free:true, desc:"오픈소스 EDR·SIEM 통합" },
+  ],
+  D06: [
+    { name:"Tenable.io",        tier:1, type:"SaaS",   api:"REST",    oscal:"component",  coverage:["SOC2","PCI","ISO27001"], free:false, desc:"취약점 스캔·관리 플랫폼" },
+    { name:"Qualys VMDR",       tier:1, type:"SaaS",   api:"REST",    oscal:"component",  coverage:["PCI","ISO27001","CMMC"], free:false, desc:"취약점·패치·구성 통합 관리" },
+    { name:"OpenVAS",           tier:2, type:"OSS",    api:"GMP/REST",oscal:"component",  coverage:["ISO27001"], free:true, desc:"오픈소스 취약점 스캐너" },
+  ],
+  D07: [
+    { name:"HashiCorp Vault",   tier:1, type:"OSS/SaaS",api:"REST",   oscal:"component",  coverage:["SOC2","PCI","ISO27001"], free:true, desc:"시크릿·키 관리 플랫폼" },
+    { name:"AWS KMS",           tier:1, type:"SaaS",   api:"AWS SDK", oscal:"component",  coverage:["SOC2","PCI"], free:false, desc:"클라우드 키 관리 서비스" },
+    { name:"Venafi",            tier:1, type:"On-Prem",api:"REST",    oscal:"component",  coverage:["PCI","ISO27001"], free:false, desc:"인증서 생명주기 관리" },
+  ],
+  D09: [
+    { name:"Splunk Enterprise",  tier:1, type:"On-Prem",api:"REST",   oscal:"component",  coverage:["SOC2","PCI","ISO27001","CMMC"], free:false, desc:"SIEM·로그 분석 플랫폼" },
+    { name:"Microsoft Sentinel", tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001"], free:false, desc:"클라우드 네이티브 SIEM·SOAR" },
+    { name:"Elastic SIEM",       tier:2, type:"OSS",   api:"REST",    oscal:"component",  coverage:["ISO27001","PCI"], free:true, desc:"오픈소스 SIEM" },
+  ],
+  D10: [
+    { name:"PagerDuty",          tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["SOC2"], free:false, desc:"사고 대응·온콜 관리" },
+    { name:"TheHive",            tier:2, type:"OSS",   api:"REST",    oscal:"component",  coverage:["ISO27001"], free:true, desc:"오픈소스 사고 대응 플랫폼" },
+    { name:"IBM SOAR",           tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["SOC2","ISO27001"], free:false, desc:"보안 자동화·오케스트레이션" },
+  ],
+  D15: [
+    { name:"OneTrust",           tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["GDPR","SOC2","ISO27001"], free:false, desc:"개인정보·컴플라이언스 관리" },
+    { name:"TrustArc",           tier:1, type:"SaaS",  api:"REST",    oscal:"component",  coverage:["GDPR","SOC2"], free:false, desc:"프라이버시 관리 플랫폼" },
+  ],
+};
+
+const GAP_DATA = [
+  { domain:"D01", name:"거버넌스·위험관리",   severity:"HIGH",   gap:"위험 평가 방법론 미수립", regulation:"ISO27001 Cl.6", control:"ra-3", remediation:"OpenRMF + 위험 평가 절차 수립" },
+  { domain:"D03", name:"접근통제·IAM",         severity:"CRITICAL",gap:"MFA 미적용 계정 23%",   regulation:"PCI DSS Req.8.4", control:"ia-2.1", remediation:"Okta MFA 전사 배포" },
+  { domain:"D06", name:"취약점·구성관리",      severity:"HIGH",   gap:"분기 스캔 미실시",        regulation:"PCI DSS Req.11.3", control:"ra-5", remediation:"Tenable.io 자동화 스캔" },
+  { domain:"D07", name:"암호화·데이터보호",    severity:"MEDIUM", gap:"DB 암호화 미적용 테이블", regulation:"PCI DSS Req.3.5", control:"sc-28", remediation:"HashiCorp Vault 키 관리 도입" },
+  { domain:"D09", name:"감사·모니터링",         severity:"HIGH",   gap:"중앙 로그 수집 없음",     regulation:"SOC2 CC7.2",      control:"au-6", remediation:"Wazuh SIEM 구축" },
+  { domain:"D10", name:"사고 대응",             severity:"MEDIUM", gap:"공식 CSIRT 미구성",       regulation:"ISO27001 A.5.24", control:"ir-8", remediation:"TheHive + 대응 플레이북" },
+  { domain:"D15", name:"개인정보·컴플라이언스", severity:"HIGH",   gap:"GDPR Art.30 RoPA 미작성", regulation:"GDPR Art.30",     control:"pt-3", remediation:"OneTrust RoPA 모듈" },
+];
+
+// ── OSCAL Component JSON 생성 ─────────────────────────────────────
+function buildOSCALComponent(solution, domain, controls) {
+  return {
+    "component-definition": {
+      "uuid": `comp-${domain.toLowerCase()}-${solution.name.replace(/\s+/g,"-").toLowerCase()}-001`,
+      "metadata": {
+        "title": `${solution.name} Security Component`,
+        "last-modified": new Date().toISOString().split("T")[0],
+        "version": "1.0.0",
+        "oscal-version": "1.1.2",
+        "remarks": `17개 도메인 프레임워크 기반 자동 생성. 도메인: ${domain}`
+      },
+      "components": [{
+        "uuid": `comp-${Math.random().toString(36).substr(2,8)}`,
+        "type": solution.type === "OSS" ? "software" : solution.type === "SaaS" ? "service" : "software",
+        "title": solution.name,
+        "description": solution.desc,
+        "props": [
+          { "name": "vendor",            "value": solution.name.split(" ")[0] },
+          { "name": "deployment-model",  "value": solution.type },
+          { "name": "api-type",          "value": solution.api },
+          { "name": "domain-coverage",   "value": domain },
+          { "name": "regulation-coverage","value": solution.coverage.join(", ") },
+        ],
+        "control-implementations": [{
+          "uuid": `ci-${Math.random().toString(36).substr(2,8)}`,
+          "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+          "description": `${solution.name}의 ${domain} 도메인 통제 구현 명세`,
+          "implemented-requirements": controls.map(ctrl => ({
+            "uuid": `ir-${Math.random().toString(36).substr(2,8)}`,
+            "control-id": ctrl,
+            "description": `${solution.name}이 ${ctrl} 통제를 구현하는 방법`,
+            "props": [{
+              "name": "implementation-status",
+              "value": "implemented"
+            }],
+            "statements": [{
+              "statement-id": `${ctrl}_stmt.a`,
+              "uuid": `stmt-${Math.random().toString(36).substr(2,8)}`,
+              "description": `${solution.name} API를 통해 ${ctrl} 통제 준수 상태를 자동으로 검증합니다.`
+            }],
+            "by-components": [{
+              "component-uuid": `comp-ref-001`,
+              "uuid": `bc-${Math.random().toString(36).substr(2,8)}`,
+              "description": `${solution.name} ${solution.api} API로 실시간 준수 확인 가능`,
+              "implementation-status": { "state": "implemented" }
+            }]
+          }))
+        }]
+      }]
+    }
+  };
+}
+
+// ── API Contract 생성 ─────────────────────────────────────────────
+function buildAPIContract(solution, domain, gapItem) {
+  return {
+    "openapi": "3.1.0",
+    "info": {
+      "title": `${solution.name} OSCAL Compliance API Contract`,
+      "version": "1.0.0",
+      "description": `17도메인 프레임워크 기반 ${domain} 갭 조치를 위한 API 계약.\n갭: ${gapItem?.gap || "N/A"}\n규제: ${gapItem?.regulation || "N/A"}`,
+      "x-oscal": {
+        "component-uuid": `comp-${domain.toLowerCase()}-001`,
+        "control-ids": [gapItem?.control || "ac-1"],
+        "regulation-mapping": solution.coverage,
+        "implementation-status": "contractual"
+      }
+    },
+    "servers": [{ "url": `https://api.${solution.name.replace(/\s+/g,"-").toLowerCase()}.com/v1` }],
+    "paths": {
+      "/oscal/compliance-status": {
+        "get": {
+          "summary": "OSCAL 준수 상태 조회",
+          "description": `NIST OSCAL SSP 형식으로 ${domain} 통제 구현 상태 반환`,
+          "operationId": "getOSCALComplianceStatus",
+          "parameters": [
+            { "name": "control-id", "in": "query", "required": false, "schema": { "type": "string", "example": gapItem?.control || "ac-2" }},
+            { "name": "framework",  "in": "query", "required": false, "schema": { "type": "string", "enum": solution.coverage }},
+            { "name": "as-of",      "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" }}
+          ],
+          "responses": {
+            "200": {
+              "description": "OSCAL SSP 형식 준수 상태",
+              "content": {
+                "application/oscal+json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "system-security-plan": {
+                        "type": "object",
+                        "properties": {
+                          "control-implementation": { "type": "object" },
+                          "implemented-requirements": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": ["control-id","implementation-status"],
+                              "properties": {
+                                "control-id":           { "type": "string" },
+                                "implementation-status":{ "type": "string", "enum":["implemented","partial","planned","not-applicable","alternative"] },
+                                "description":          { "type": "string" },
+                                "evidence": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type":      { "type":"string" },
+                                      "timestamp": { "type":"string","format":"date-time" },
+                                      "data":      { "type":"object" }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "x-oscal-evidence": {
+            "collection-method": "automated-api",
+            "frequency": "real-time",
+            "audit-trail": true
+          }
+        }
+      },
+      "/oscal/gap-remediation": {
+        "post": {
+          "summary": "갭 조치 실행",
+          "description": `${gapItem?.gap || "식별된 갭"}에 대한 자동 조치 트리거`,
+          "operationId": "triggerGapRemediation",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["poam-item-id","remediation-action"],
+                  "properties": {
+                    "poam-item-id":        { "type":"string", "description":"OSCAL POA&M 항목 UUID" },
+                    "control-id":          { "type":"string", "example": gapItem?.control },
+                    "remediation-action":  { "type":"string", "enum":["enforce","remediate","accept-risk","transfer"] },
+                    "target-date":         { "type":"string", "format":"date" },
+                    "justification":       { "type":"string" }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "202": {
+              "description": "조치 수락됨 - OSCAL POA&M 업데이트됨",
+              "content": {
+                "application/oscal+json": {
+                  "schema": {
+                    "type":"object",
+                    "properties": {
+                      "poam-item": { "type":"object" },
+                      "milestone": { "type":"object" },
+                      "status":    { "type":"string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/oscal/evidence/collect": {
+        "post": {
+          "summary": "감사 증거 자동 수집",
+          "description": "지정된 통제에 대한 증거를 자동 수집하여 OSCAL SAR 형식으로 반환",
+          "operationId": "collectEvidence",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type":"object",
+                  "properties": {
+                    "control-ids": { "type":"array","items":{"type":"string"} },
+                    "evidence-types": { "type":"array","items":{"type":"string","enum":["configuration","log","screenshot","interview","test-result"]} }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "OSCAL SAR 형식 증거 컬렉션",
+              "content": { "application/oscal+json": { "schema": { "type":"object" } } }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "securitySchemes": {
+        "oscalApiKey": { "type":"apiKey", "in":"header", "name":"X-OSCAL-API-Key" },
+        "bearerAuth":  { "type":"http",   "scheme":"bearer", "bearerFormat":"JWT" }
+      }
+    },
+    "x-oscal-metadata": {
+      "profile-source":   "cai-17domain-profile.json",
+      "component-def":    `comp-${domain.toLowerCase()}-001.json`,
+      "poam-reference":   "cai-poam-2026.json",
+      "auto-evidence":    true,
+      "verification-sla": "15min"
+    }
+  };
+}
+
+// ── POA&M JSON 생성 ───────────────────────────────────────────────
+function buildPOAM(gaps) {
+  return {
+    "plan-of-action-and-milestones": {
+      "uuid": `poam-cai-2026-${Date.now()}`,
+      "metadata": {
+        "title": "CAI 17도메인 갭 조치 계획 (POA&M)",
+        "last-modified": new Date().toISOString().split("T")[0],
+        "version": "1.0",
+        "oscal-version": "1.1.2"
+      },
+      "system-id": { "identifier-type": "https://ietf.org/rfc/rfc4122", "id": "cai-system-001" },
+      "poam-items": gaps.map((g, i) => ({
+        "uuid": `poam-item-${String(i+1).padStart(3,"0")}`,
+        "title": g.gap,
+        "description": `도메인 ${g.domain} (${g.name}): ${g.gap}`,
+        "props": [
+          { "name":"severity",   "value": g.severity },
+          { "name":"domain",     "value": g.domain },
+          { "name":"regulation", "value": g.regulation },
+        ],
+        "related-findings": [{ "finding-uuid": `finding-${String(i+1).padStart(3,"0")}` }],
+        "origins": [{ "actors": [{ "type":"party", "actor-uuid":"security-team-001" }] }],
+        "risk": {
+          "uuid": `risk-${String(i+1).padStart(3,"0")}`,
+          "title": `${g.gap} 위험`,
+          "status": "open",
+          "characterizations": [{ "origin": { "actors": [{"type":"party","actor-uuid":"security-team-001"}] }, "facets": [{ "name":"likelihood","system":"https://csrc.nist.gov/ns/oscal","value": g.severity === "CRITICAL" ? "high" : g.severity === "HIGH" ? "medium" : "low" }] }]
+        },
+        "remediations": [{
+          "uuid": `rem-${String(i+1).padStart(3,"0")}`,
+          "lifecycle": "recommendation",
+          "title": g.remediation,
+          "description": `${g.remediation}을 통해 ${g.regulation} 요건 충족`,
+          "tasks": [
+            { "uuid":`task-${i}-1`, "type":"action","title":"솔루션 도입 검토","timing":{ "within-date-range":{ "start":new Date().toISOString(), "end":new Date(Date.now()+30*24*60*60*1000).toISOString() } } },
+            { "uuid":`task-${i}-2`, "type":"action","title":"OSCAL Component 등록","timing":{ "within-date-range":{ "start":new Date().toISOString(), "end":new Date(Date.now()+60*24*60*60*1000).toISOString() } } },
+            { "uuid":`task-${i}-3`, "type":"action","title":"API Contract 검증","timing":{ "within-date-range":{ "start":new Date().toISOString(), "end":new Date(Date.now()+90*24*60*60*1000).toISOString() } } },
+          ]
+        }]
+      }))
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════
+const C = {
+  bg:         "#070b14",
+  bg2:        "#0c1220",
+  bg3:        "#111827",
+  border:     "#1c2d42",
+  border2:    "#243447",
+  text:       "#d1dce8",
+  textDim:    "#4a6278",
+  textMuted:  "#2d4155",
+  accent:     "#00e5ff",
+  accentDim:  "#0097a7",
+  success:    "#00e676",
+  warning:    "#ffab40",
+  error:      "#ff5252",
+  critical:   "#ff1744",
+};
+
+const s = {
+  app: { fontFamily:"'IBM Plex Mono',monospace", background:C.bg, minHeight:"100vh", color:C.text, fontSize:"12px" },
+  hdr: {
+    background:`linear-gradient(90deg, #050a12 0%, #0a1628 50%, #050a12 100%)`,
+    borderBottom:`1px solid ${C.border}`,
+    padding:"16px 28px",
+    display:"flex", alignItems:"center", justifyContent:"space-between",
+  },
+  tabs: { display:"flex", background:C.bg2, borderBottom:`1px solid ${C.border}`, padding:"0 20px", overflowX:"auto" },
+  tab: (a) => ({
+    padding:"13px 18px", cursor:"pointer", fontSize:"10px", letterSpacing:"1.5px",
+    fontWeight:"700", color: a ? C.accent : C.textDim,
+    background:"transparent",
+    borderTop:"none", borderLeft:"none", borderRight:"none",
+    borderBottom: a ? `2px solid ${C.accent}` : "2px solid transparent",
+    fontFamily:"inherit", whiteSpace:"nowrap", transition:"all 0.15s",
+  }),
+  main:  { padding:"24px 28px", maxWidth:"1500px", margin:"0 auto" },
+  card:  { background:C.bg2, border:`1px solid ${C.border}`, borderRadius:"4px", padding:"18px", marginBottom:"14px" },
+  sec:   { color:C.accent, fontSize:"10px", letterSpacing:"3px", fontWeight:"700", marginBottom:"16px", textTransform:"uppercase" },
+  g2:    { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px" },
+  g3:    { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"12px" },
+  code:  { background:"#040810", border:`1px solid ${C.border}`, borderLeft:`3px solid ${C.accent}`, borderRadius:"3px", padding:"14px", fontSize:"10px", lineHeight:"1.8", color:"#80cbc4", overflowX:"auto", whiteSpace:"pre", fontFamily:"inherit", maxHeight:"380px", overflow:"auto" },
+  code2: { background:"#040810", border:`1px solid ${C.border}`, borderLeft:`3px solid #ab47bc`, borderRadius:"3px", padding:"14px", fontSize:"10px", lineHeight:"1.8", color:"#ce93d8", overflowX:"auto", whiteSpace:"pre", fontFamily:"inherit", maxHeight:"380px", overflow:"auto" },
+  info:  { background:"#030d1a", border:`1px solid #0d47a1`, borderLeft:`3px solid #1e88e5`, borderRadius:"3px", padding:"11px 14px", marginBottom:"12px", fontSize:"11px", color:"#90caf9", lineHeight:"1.6" },
+  warn:  { background:"#1a0e03", border:`1px solid #e65100`, borderLeft:`3px solid ${C.warning}`, borderRadius:"3px", padding:"11px 14px", marginBottom:"10px", fontSize:"11px", color:C.warning, lineHeight:"1.6" },
+  ok:    { background:"#03120a", border:`1px solid #1b5e20`, borderLeft:`3px solid ${C.success}`, borderRadius:"3px", padding:"11px 14px", marginBottom:"10px", fontSize:"11px", color:C.success, lineHeight:"1.6" },
+  btn: (v) => ({
+    background: v==="p" ? "#013366" : v==="g" ? "#013320" : v==="d" ? "#300030" : C.bg3,
+    color:      v==="p" ? C.accent   : v==="g" ? C.success  : v==="d" ? "#ce93d8" : C.textDim,
+    border:`1px solid ${v==="p" ? C.accentDim : v==="g" ? "#2e7d32" : v==="d" ? "#6a1b9a" : C.border2}`,
+    padding:"7px 16px", borderRadius:"2px", cursor:"pointer",
+    fontSize:"10px", letterSpacing:"1.5px", fontWeight:"700",
+    fontFamily:"inherit", transition:"all 0.15s",
+  }),
+  sevBadge: (sev) => ({
+    padding:"2px 8px", borderRadius:"2px", fontSize:"9px", fontWeight:"700", letterSpacing:"1px",
+    background: sev==="CRITICAL" ? "#7b000022" : sev==="HIGH" ? "#5d180022" : "#4a3a0022",
+    border:`1px solid ${sev==="CRITICAL" ? C.critical : sev==="HIGH" ? C.error : C.warning}`,
+    color:       sev==="CRITICAL" ? C.critical : sev==="HIGH" ? C.error : C.warning,
+  }),
+  pipe: (color) => ({
+    background: `${color}18`,
+    border:`1px solid ${color}44`,
+    borderTop:`3px solid ${color}`,
+    borderRadius:"4px",
+    padding:"14px",
+  }),
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PIPELINE VIEW
+// ═══════════════════════════════════════════════════════════════
+function PipelineView({ onStage }) {
+  const [active, setActive] = useState(null);
+  const flow = [
+    { label:"기업 프로파일\n(Compliance DNA)", color:C.accent,   from:"입력" },
+    { label:"갭 분석\n(17도메인×규제)",       color:"#ff7043", from:"S1→S2" },
+    { label:"솔루션 발굴\n(도메인별 매핑)",   color:"#66bb6a", from:"S2→S3" },
+    { label:"OSCAL Component\n자동 생성",      color:"#ab47bc", from:"S3→S4" },
+    { label:"API Contract\n(OpenAPI+OSCAL)",    color:"#ffa726", from:"S4→S5" },
+    { label:"자동 검증\n(CI/CD 통합)",         color:"#26c6da", from:"S5→S6" },
+    { label:"지속 모니터링\n(Living Policy)",  color:"#ec407a", from:"S6→S7" },
+  ];
+
+  return (
+    <div>
+      <div style={s.info}>
+        ⬡ 이 파이프라인은 <strong>단방향 워터폴이 아닙니다.</strong> S7(모니터링)에서 발생하는 새 갭은 자동으로 S2(갭 분석)로 피드백되어 <strong>자기 개선하는 순환 루프</strong>를 형성합니다. 각 단계를 클릭하면 상세 보기로 이동합니다.
+      </div>
+
+      {/* 파이프라인 플로우 */}
+      <div style={{ overflowX:"auto", marginBottom:"24px" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:"0", minWidth:"980px", padding:"20px 0" }}>
+          {flow.map((f, i) => (
+            <div key={i} style={{ display:"flex", alignItems:"center", flex:1 }}>
+              <div
+                onClick={() => { setActive(i); onStage && onStage(i); }}
+                style={{
+                  flex:1, background:`${f.color}15`, border:`1px solid ${f.color}55`,
+                  borderTop:`3px solid ${f.color}`, borderRadius:"4px",
+                  padding:"14px 10px", textAlign:"center", cursor:"pointer",
+                  transition:"all 0.2s",
+                  boxShadow: active===i ? `0 0 20px ${f.color}44` : "none",
+                  transform: active===i ? "translateY(-3px)" : "none",
+                }}>
+                <div style={{ color:f.color, fontSize:"10px", fontWeight:"700", letterSpacing:"1px", marginBottom:"6px" }}>
+                  S{i+1}
+                </div>
+                <div style={{ color:C.text, fontSize:"10px", lineHeight:"1.5", whiteSpace:"pre-line" }}>
+                  {f.label}
+                </div>
+              </div>
+              {i < flow.length-1 && (
+                <div style={{ color:C.textDim, fontSize:"16px", padding:"0 3px", flexShrink:0 }}>→</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 피드백 루프 표시 */}
+      <div style={{ ...s.card, textAlign:"center", background:"#040810" }}>
+        <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"2px", marginBottom:"8px" }}>FEEDBACK LOOP</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"8px", flexWrap:"wrap" }}>
+          {["S7 모니터링", "→ 신규갭 탐지", "→ S2 갭분석 재실행", "→ S3 솔루션 재매핑", "→ OSCAL POA&M 자동갱신", "→ S7 모니터링"].map((t, i) => (
+            <span key={i} style={{ color: i===0||i===5 ? "#ec407a" : i===2 ? "#ff7043" : i===4 ? "#ab47bc" : C.textDim, fontSize:"11px" }}>{t}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* 단계별 요약 카드 */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"10px", marginTop:"6px" }}>
+        {PIPELINE_STAGES.map((stage, i) => (
+          <div key={stage.id} onClick={() => onStage && onStage(i)}
+            style={{ ...s.pipe(stage.color), cursor:"pointer" }}>
+            <div style={{ color:stage.color, fontSize:"10px", fontWeight:"700", letterSpacing:"1px", marginBottom:"4px" }}>
+              {stage.id} · {stage.code}
+            </div>
+            <div style={{ color:C.text, fontSize:"11px", marginBottom:"4px" }}>{stage.label}</div>
+            <div style={{ color:C.textDim, fontSize:"10px" }}>{stage.sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GAP ANALYSIS VIEW
+// ═══════════════════════════════════════════════════════════════
+function GapView({ onSelectGap }) {
+  const [sel, setSel] = useState(null);
+  const byDomain = GAP_DATA.reduce((acc, g) => {
+    acc[g.domain] = acc[g.domain] || [];
+    acc[g.domain].push(g);
+    return acc;
+  }, {});
+
+  const critCount = GAP_DATA.filter(g=>g.severity==="CRITICAL").length;
+  const highCount = GAP_DATA.filter(g=>g.severity==="HIGH").length;
+
+  return (
+    <div>
+      <div style={s.info}>
+        🔍 갭 분석은 <strong>17개 도메인 × OSCAL PROFILE</strong>을 교차하여 구현되지 않은 통제를 자동 식별합니다.
+        각 갭은 OSCAL POA&M 항목으로 변환되어 솔루션 선택 → API Contract → 자동 검증으로 연결됩니다.
+      </div>
+
+      {/* 요약 */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"10px", marginBottom:"20px" }}>
+        {[
+          { label:"총 갭", value:GAP_DATA.length, color:C.accent },
+          { label:"CRITICAL", value:critCount, color:C.critical },
+          { label:"HIGH", value:highCount, color:C.error },
+          { label:"MEDIUM", value:GAP_DATA.length-critCount-highCount, color:C.warning },
+        ].map((item, i) => (
+          <div key={i} style={{ background:C.bg3, border:`1px solid ${item.color}44`, borderTop:`2px solid ${item.color}`, borderRadius:"3px", padding:"14px", textAlign:"center" }}>
+            <div style={{ color:item.color, fontSize:"28px", fontWeight:"700" }}>{item.value}</div>
+            <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px", marginTop:"4px" }}>{item.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={s.g2}>
+        <div>
+          <div style={s.sec}>갭 목록</div>
+          {GAP_DATA.map((g, i) => (
+            <div key={i}
+              onClick={() => { setSel(g); onSelectGap && onSelectGap(g); }}
+              style={{
+                display:"grid", gridTemplateColumns:"55px 1fr auto",
+                alignItems:"center", gap:"10px",
+                padding:"10px 12px", marginBottom:"6px",
+                background: sel?.domain===g.domain ? "#0f2035" : C.bg3,
+                border:`1px solid ${sel?.domain===g.domain ? C.accentDim : C.border}`,
+                borderLeft:`3px solid ${g.severity==="CRITICAL"?C.critical:g.severity==="HIGH"?C.error:C.warning}`,
+                borderRadius:"3px", cursor:"pointer", transition:"all 0.15s",
+              }}>
+              <span style={{ color:C.accent, fontWeight:"700", fontSize:"11px" }}>{g.domain}</span>
+              <div>
+                <div style={{ color:C.text, fontSize:"11px", marginBottom:"3px" }}>{g.gap}</div>
+                <div style={{ color:C.textDim, fontSize:"10px" }}>{g.regulation}</div>
+              </div>
+              <span style={s.sevBadge(g.severity)}>{g.severity}</span>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={s.sec}>선택된 갭 상세</div>
+          {sel ? (
+            <div style={s.card}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"14px" }}>
+                <div>
+                  <div style={{ color:C.accent, fontWeight:"700", fontSize:"14px" }}>{sel.domain} · {sel.name}</div>
+                  <div style={{ color:C.text, fontSize:"12px", marginTop:"4px" }}>{sel.gap}</div>
+                </div>
+                <span style={s.sevBadge(sel.severity)}>{sel.severity}</span>
+              </div>
+              {[
+                { label:"관련 규제",     value:sel.regulation },
+                { label:"OSCAL 통제 ID", value:sel.control },
+                { label:"권장 조치",     value:sel.remediation },
+              ].map((row, i) => (
+                <div key={i} style={{ display:"grid", gridTemplateColumns:"120px 1fr", gap:"10px", padding:"8px 0", borderTop:`1px solid ${C.border}` }}>
+                  <span style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px" }}>{row.label}</span>
+                  <span style={{ color: i===1 ? "#ce93d8" : i===2 ? C.success : C.text, fontSize:"11px" }}>{row.value}</span>
+                </div>
+              ))}
+
+              <div style={{ marginTop:"16px" }}>
+                <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px", marginBottom:"8px" }}>OSCAL POA&M 항목 미리보기</div>
+                <div style={s.code}>{JSON.stringify({
+                  "uuid": `poam-item-${sel.domain.toLowerCase()}`,
+                  "title": sel.gap,
+                  "props": [
+                    { "name":"severity", "value":sel.severity },
+                    { "name":"regulation","value":sel.regulation },
+                  ],
+                  "remediations": [{
+                    "title": sel.remediation,
+                    "tasks": [
+                      {"type":"action","title":"솔루션 선택 및 도입"},
+                      {"type":"action","title":"OSCAL Component 등록"},
+                      {"type":"action","title":"API Contract 체결 및 검증"},
+                    ]
+                  }]
+                }, null, 2)}</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ ...s.card, textAlign:"center", padding:"40px", color:C.textDim }}>
+              ← 왼쪽에서 갭 항목을 선택하세요
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SOLUTION MAPPING VIEW
+// ═══════════════════════════════════════════════════════════════
+function SolutionView({ preselectedGap }) {
+  const [selDomain, setSelDomain] = useState(preselectedGap?.domain || "D03");
+  const [selSolution, setSelSolution] = useState(null);
+
+  const domains = Object.keys(SOLUTIONS_DB);
+  const solutions = SOLUTIONS_DB[selDomain] || [];
+
+  return (
+    <div>
+      <div style={s.info}>
+        🔧 각 도메인별 <strong>Tier 1(엔터프라이즈)·Tier 2(오픈소스)</strong> 솔루션이 매핑됩니다.
+        솔루션 선택 → OSCAL Component 자동 생성 → API Contract로 이어집니다.
+      </div>
+
+      <div style={{ display:"flex", flexWrap:"wrap", gap:"6px", marginBottom:"16px" }}>
+        {domains.map(d => (
+          <button key={d} style={{ ...s.btn(selDomain===d?"p":""), fontSize:"10px" }}
+            onClick={() => { setSelDomain(d); setSelSolution(null); }}>
+            {d}
+          </button>
+        ))}
+      </div>
+
+      <div style={s.g2}>
+        <div>
+          <div style={s.sec}>{selDomain} 도메인 솔루션</div>
+          {solutions.map((sol, i) => (
+            <div key={i}
+              onClick={() => setSelSolution(sol)}
+              style={{
+                padding:"12px 14px", marginBottom:"8px",
+                background: selSolution?.name===sol.name ? "#0f2035" : C.bg3,
+                border:`1px solid ${selSolution?.name===sol.name ? C.accentDim : C.border}`,
+                borderLeft:`3px solid ${sol.tier===1 ? C.accent : C.success}`,
+                borderRadius:"3px", cursor:"pointer", transition:"all 0.15s",
+              }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"6px" }}>
+                <span style={{ color:C.text, fontWeight:"700", fontSize:"12px" }}>{sol.name}</span>
+                <div style={{ display:"flex", gap:"4px" }}>
+                  <span style={{ ...s.sevBadge("HIGH"), color: sol.tier===1 ? C.accent : C.success, borderColor: sol.tier===1 ? C.accentDim : "#2e7d32", background: sol.tier===1 ? "#001f3322" : "#00320f22" }}>
+                    TIER {sol.tier}
+                  </span>
+                  <span style={{ ...s.sevBadge("HIGH"), color: sol.free ? C.success : C.warning, borderColor: sol.free ? "#2e7d32" : "#e65100", background: sol.free ? "#00320f22" : "#3e190022" }}>
+                    {sol.free ? "FREE" : "PAID"}
+                  </span>
+                </div>
+              </div>
+              <div style={{ color:C.textDim, fontSize:"10px", marginBottom:"6px" }}>{sol.desc}</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"4px" }}>
+                <span style={{ background:"#001220", border:`1px solid ${C.border}`, color:"#607d8b", padding:"1px 7px", borderRadius:"2px", fontSize:"9px" }}>{sol.type}</span>
+                <span style={{ background:"#001220", border:`1px solid ${C.border}`, color:"#ab47bc", padding:"1px 7px", borderRadius:"2px", fontSize:"9px" }}>{sol.api}</span>
+                {sol.coverage.map(c => (
+                  <span key={c} style={{ background:"#001220", border:`1px solid ${C.border}`, color:"#66bb6a", padding:"1px 7px", borderRadius:"2px", fontSize:"9px" }}>{c}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={s.sec}>솔루션 상세 & OSCAL 연결</div>
+          {selSolution ? (
+            <div>
+              <div style={s.card}>
+                <div style={{ color:C.accent, fontSize:"14px", fontWeight:"700", marginBottom:"12px" }}>{selSolution.name}</div>
+                {[
+                  { label:"배포 유형",  value:selSolution.type },
+                  { label:"API 유형",   value:selSolution.api },
+                  { label:"OSCAL 지원", value:selSolution.oscal === "native" ? "✓ 네이티브" : "✓ Component 정의로 통합" },
+                  { label:"규제 커버리지", value:selSolution.coverage.join(", ") },
+                ].map((row,i) => (
+                  <div key={i} style={{ display:"grid", gridTemplateColumns:"110px 1fr", padding:"7px 0", borderTop:`1px solid ${C.border}` }}>
+                    <span style={{ color:C.textDim, fontSize:"10px" }}>{row.label}</span>
+                    <span style={{ color:C.text, fontSize:"11px" }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop:"4px" }}>
+                <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px", marginBottom:"8px" }}>OSCAL COMPONENT 연결 흐름</div>
+                {[
+                  `${selSolution.name} 도입`,
+                  `OSCAL Component.json 자동 생성`,
+                  `SSP에 Component 등록`,
+                  `API Contract 체결 → 자동 증거 수집`,
+                  `POA&M 갭 항목 CLOSED`,
+                ].map((step, i) => (
+                  <div key={i} style={{ display:"flex", gap:"8px", alignItems:"center", marginBottom:"6px" }}>
+                    <span style={{ background:"#013366", color:C.accent, width:"20px", height:"20px", borderRadius:"2px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"10px", fontWeight:"700", flexShrink:0 }}>{i+1}</span>
+                    <span style={{ color:C.text, fontSize:"11px" }}>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ ...s.card, textAlign:"center", padding:"40px", color:C.textDim }}>
+              ← 솔루션을 선택하세요
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OSCAL COMPONENT GENERATOR
+// ═══════════════════════════════════════════════════════════════
+function ComponentView() {
+  const [selDomain, setSelDomain] = useState("D03");
+  const [selSolution, setSelSolution] = useState(null);
+  const [generated, setGenerated] = useState(null);
+  const ctrlMap = { D01:["pm-1","ra-1","ra-3"], D03:["ac-2","ac-3","ac-6","ia-2","ia-5"], D04:["sc-7","sc-8"], D05:["si-3","si-4"], D06:["ra-5","cm-6","si-2"], D07:["sc-12","sc-13","sc-28"], D09:["au-2","au-6","au-9","ca-7"], D10:["ir-4","ir-5","ir-6"], D15:["pt-2","pt-3"] };
+
+  const sols = SOLUTIONS_DB[selDomain] || [];
+
+  return (
+    <div>
+      <div style={s.info}>
+        ⚙️ 솔루션 선택 → <strong>OSCAL Component Definition JSON이 자동 생성</strong>됩니다.
+        이 파일을 IBM Trestle로 SSP에 조립하면 감사 증거의 기계 판독 원천이 됩니다.
+      </div>
+
+      <div style={{ display:"flex", gap:"10px", marginBottom:"16px", flexWrap:"wrap" }}>
+        <div>
+          <div style={{ color:C.textDim, fontSize:"10px", marginBottom:"6px" }}>도메인 선택</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"4px" }}>
+            {Object.keys(SOLUTIONS_DB).map(d => (
+              <button key={d} style={{ ...s.btn(selDomain===d?"p":"") }} onClick={() => { setSelDomain(d); setSelSolution(null); setGenerated(null); }}>{d}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={s.g2}>
+        <div>
+          <div style={s.sec}>솔루션 선택</div>
+          {sols.map((sol, i) => (
+            <div key={i} onClick={() => { setSelSolution(sol); setGenerated(null); }}
+              style={{ padding:"10px 12px", marginBottom:"6px", background:selSolution?.name===sol.name?C.bg3:"#080e18", border:`1px solid ${selSolution?.name===sol.name?C.accentDim:C.border}`, borderRadius:"3px", cursor:"pointer" }}>
+              <div style={{ color:C.text, fontSize:"11px", fontWeight:"700" }}>{sol.name}</div>
+              <div style={{ color:C.textDim, fontSize:"10px", marginTop:"3px" }}>{sol.type} · {sol.api} API</div>
+            </div>
+          ))}
+
+          {selSolution && (
+            <button style={{ ...s.btn("d"), width:"100%", padding:"10px", marginTop:"6px" }}
+              onClick={() => setGenerated(buildOSCALComponent(selSolution, selDomain, ctrlMap[selDomain] || ["ac-1"]))}>
+              ▶ OSCAL COMPONENT 생성
+            </button>
+          )}
+        </div>
+
+        <div>
+          <div style={s.sec}>생성된 OSCAL Component.json</div>
+          {generated ? (
+            <div>
+              <div style={s.ok}>✓ Component 생성 완료 — IBM Trestle로 SSP에 등록 가능</div>
+              <div style={s.code2}>{JSON.stringify(generated, null, 2)}</div>
+              <div style={{ marginTop:"10px" }}>
+                <div style={s.warn}>
+                  다음 단계: <code>trestle import -f component.json -o {selSolution?.name.replace(/\s+/g,"-").toLowerCase()}</code>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ ...s.card, textAlign:"center", padding:"40px", color:C.textDim }}>
+              솔루션을 선택하고 생성 버튼을 누르세요
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API CONTRACT VIEW
+// ═══════════════════════════════════════════════════════════════
+function ContractView() {
+  const [selGap, setSelGap] = useState(GAP_DATA[0]);
+  const [selSol, setSelSol] = useState(null);
+  const [view, setView] = useState("openapi");
+  const [generated, setGenerated] = useState(null);
+
+  const sols = SOLUTIONS_DB[selGap?.domain] || [];
+
+  return (
+    <div>
+      <div style={s.info}>
+        📄 <strong>API Contract = OpenAPI 3.1 + OSCAL 메타데이터</strong>의 결합입니다.
+        솔루션이 이 계약을 구현하면, 감사자는 API를 호출해 실시간으로 통제 준수를 확인할 수 있습니다.
+        이것이 "문서"가 아닌 "실행 가능한 컴플라이언스"입니다.
+      </div>
+
+      <div style={s.g2}>
+        <div>
+          <div style={s.sec}>① 갭 선택</div>
+          {GAP_DATA.map((g,i) => (
+            <div key={i} onClick={() => { setSelGap(g); setSelSol(null); setGenerated(null); }}
+              style={{ padding:"9px 12px", marginBottom:"5px", background:selGap?.domain===g.domain?C.bg3:"#080e18", border:`1px solid ${selGap?.domain===g.domain?C.accentDim:C.border}`, borderLeft:`2px solid ${g.severity==="CRITICAL"?C.critical:g.severity==="HIGH"?C.error:C.warning}`, borderRadius:"3px", cursor:"pointer" }}>
+              <div style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ color:C.accent, fontSize:"10px", fontWeight:"700" }}>{g.domain}</span>
+                <span style={s.sevBadge(g.severity)}>{g.severity}</span>
+              </div>
+              <div style={{ color:C.text, fontSize:"11px", marginTop:"3px" }}>{g.gap}</div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={s.sec}>② 솔루션 선택</div>
+          {selGap && sols.map((sol, i) => (
+            <div key={i} onClick={() => { setSelSol(sol); setGenerated(null); }}
+              style={{ padding:"9px 12px", marginBottom:"5px", background:selSol?.name===sol.name?C.bg3:"#080e18", border:`1px solid ${selSol?.name===sol.name?C.accentDim:C.border}`, borderRadius:"3px", cursor:"pointer" }}>
+              <div style={{ color:C.text, fontSize:"11px", fontWeight:"700" }}>{sol.name}</div>
+              <div style={{ color:C.textDim, fontSize:"10px", marginTop:"2px" }}>{sol.api} · {sol.coverage.join(", ")}</div>
+            </div>
+          ))}
+
+          {selGap && selSol && (
+            <button style={{ ...s.btn("p"), width:"100%", padding:"10px", marginTop:"6px" }}
+              onClick={() => setGenerated(buildAPIContract(selSol, selGap.domain, selGap))}>
+              ▶ API CONTRACT 생성
+            </button>
+          )}
+        </div>
+      </div>
+
+      {generated && (
+        <div style={{ marginTop:"20px" }}>
+          <div style={s.ok}>✓ API Contract 생성 완료 — 솔루션 벤더에 제공하여 OSCAL 준수 엔드포인트 구현 요청</div>
+
+          <div style={{ display:"flex", gap:"6px", marginBottom:"12px", flexWrap:"wrap" }}>
+            {["openapi","poam","workflow"].map(v => (
+              <button key={v} style={s.btn(view===v?"p":"")} onClick={() => setView(v)}>
+                {v==="openapi" ? "OpenAPI Contract" : v==="poam" ? "OSCAL POA&M 연동" : "검증 워크플로우"}
+              </button>
+            ))}
+          </div>
+
+          {view === "openapi" && (
+            <div>
+              <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px", marginBottom:"6px" }}>
+                OpenAPI 3.1 + OSCAL 메타데이터 계약 ({selSol?.name})
+              </div>
+              <div style={s.code}>{JSON.stringify(generated, null, 2)}</div>
+              <div style={{ ...s.warn, marginTop:"10px" }}>
+                핵심: <code style={{color:"#ffa726"}}>"x-oscal-metadata"</code> 확장 필드가 이 API를 OSCAL 생태계와 연결합니다.
+                이 필드 없이는 일반 REST API와 다르지 않습니다.
+              </div>
+            </div>
+          )}
+
+          {view === "poam" && (
+            <div style={s.code2}>{JSON.stringify(buildPOAM([selGap]), null, 2)}</div>
+          )}
+
+          {view === "workflow" && (
+            <div style={s.card}>
+              <div style={s.sec}>자동 검증 워크플로우</div>
+              {[
+                { step:"1. Contract 체결",    desc:`${selSol?.name}에 OpenAPI Contract 전달 → /oscal/compliance-status 엔드포인트 구현 합의`, color:"#00e5ff" },
+                { step:"2. CI/CD 통합",        desc:`GitHub Actions에서 매일 POST /oscal/evidence/collect 호출 → 증거 자동 수집`, color:"#66bb6a" },
+                { step:"3. SSP 자동 업데이트", desc:`수집된 증거 → OSCAL SAR 형식으로 변환 → SSP implemented-requirements 상태 자동 갱신`, color:"#ab47bc" },
+                { step:"4. POA&M 자동 종료",   desc:`준수 확인 시 POA&M 항목 status: closed 자동 업데이트`, color:"#ffa726" },
+                { step:"5. 준수율 대시보드",   desc:`전체 통제 구현 상태를 실시간 집계 → 경영진 보고 자동 생성`, color:"#ec407a" },
+              ].map((item, i) => (
+                <div key={i} style={{ display:"grid", gridTemplateColumns:"180px 1fr", gap:"12px", padding:"10px 0", borderTop:`1px solid ${C.border}` }}>
+                  <span style={{ color:item.color, fontSize:"11px", fontWeight:"700" }}>{item.step}</span>
+                  <span style={{ color:C.text, fontSize:"11px", lineHeight:"1.5" }}>{item.desc}</span>
+                </div>
+              ))}
+
+              <div style={{ ...s.code, marginTop:"14px" }}>{"# GitHub Actions 자동 검증 워크플로우\n\
+name: OSCAL Compliance Auto-Verify\n\
+on:\n\
+  schedule:\n\
+    - cron: '0 9 * * *'   # 매일 오전 9시\n\
+\n\
+jobs:\n\
+  verify:\n\
+    runs-on: ubuntu-latest\n\
+    steps:\n\
+      - name: Collect Evidence via API\n\
+        run: |\n\
+          curl -X POST \\\\\n\
+            -H \"X-OSCAL-API-Key: $" + "{{ secrets.OSCAL_API_KEY }}" + "\" \\\\\n\
+            -H \"Content-Type: application/json\" \\\\\n\
+            -d '{\"control-ids\":[\"" + (selGap ? selGap.control : "") + "\"],\"evidence-types\":[\"configuration\",\"log\"]}' \\\\\n\
+            https://api." + (selSol ? selSol.name.replace(/\s+/g,"-").toLowerCase() : "solution") + ".com/v1/oscal/evidence/collect \\\\\n\
+            -o evidence.json\n\
+\n\
+      - name: Update OSCAL SSP\n\
+        run: |\n\
+          trestle author ssp-assemble \\\\\n\
+            --name cai-ssp \\\\\n\
+            --output cai-ssp-updated.json\n\
+\n\
+      - name: Update POA&M\n\
+        run: python scripts/update_poam.py --evidence evidence.json\n\
+\n\
+      - name: Calculate Compliance Score\n\
+        run: python scripts/calc_score.py --ssp cai-ssp-updated.json"}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MONITORING VIEW
+// ═══════════════════════════════════════════════════════════════
+function MonitorView() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t+1), 3000);
+    return () => clearInterval(id);
+  }, []);
+
+  const scores = {
+    D01:{ score:82, trend:"+3" }, D03:{ score:71, trend:"-2" },
+    D06:{ score:65, trend:"+5" }, D09:{ score:78, trend:"+1" },
+    D10:{ score:88, trend:"+0" }, D15:{ score:60, trend:"+8" },
+  };
+
+  const events = [
+    { time:"09:14", type:"GAP",     msg:"D03: MFA 비적용 계정 2개 신규 탐지 → POA&M 자동 갱신" },
+    { time:"09:08", type:"VERIFY",  msg:"D06: Tenable 스캔 완료 → 3개 CVE 신규 등록" },
+    { time:"08:55", type:"CLOSED",  msg:"D07: HashiCorp Vault 키 교체 완료 → POA&M 항목 CLOSED" },
+    { time:"08:30", type:"WARN",    msg:"D15: GDPR 국외 이전 계약 만료 D-30 경고" },
+    { time:"07:00", type:"VERIFY",  msg:"D09: Wazuh 일일 로그 수집 완료 → SAR 업데이트" },
+  ];
+
+  const scoreColor = (s) => s >= 85 ? C.success : s >= 70 ? "#26c6da" : s >= 55 ? C.warning : C.error;
+
+  return (
+    <div>
+      <div style={s.info}>
+        🔄 <strong>Living Policy 상태:</strong> API Contract를 통해 수집된 증거가 OSCAL SSP를 실시간 업데이트합니다.
+        <span style={{ color:C.success }}> ● LIVE</span> — 3초마다 새로고침 시뮬레이션 중
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"10px", marginBottom:"20px" }}>
+        {[
+          { label:"전체 준수율",     value:`${73 + (tick%3)}%`,     color:C.warning },
+          { label:"미해결 POA&M",    value:`${7 - (tick%2)}건`,      color:C.error },
+          { label:"자동 검증 통제",  value:`${43 + tick%5}개`,       color:C.success },
+          { label:"증거 수집 완료",  value:`${91 + tick%4}%`,        color:C.accent },
+          { label:"API 활성 Contract",value:"12개",                  color:"#ab47bc" },
+          { label:"마지막 스캔",     value:`${tick%60}분 전`,         color:C.textDim },
+        ].map((item, i) => (
+          <div key={i} style={{ background:C.bg3, border:`1px solid ${item.color}44`, borderTop:`2px solid ${item.color}`, borderRadius:"3px", padding:"14px", textAlign:"center" }}>
+            <div style={{ color:item.color, fontSize:"22px", fontWeight:"700" }}>{item.value}</div>
+            <div style={{ color:C.textDim, fontSize:"10px", marginTop:"4px" }}>{item.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={s.g2}>
+        <div>
+          <div style={s.sec}>도메인별 실시간 준수율</div>
+          {Object.entries(scores).map(([domain, data], i) => (
+            <div key={i} style={{ marginBottom:"10px" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"5px" }}>
+                <span style={{ color:C.accent, fontSize:"11px", fontWeight:"700" }}>{domain}</span>
+                <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+                  <span style={{ color:data.trend.startsWith("+") && data.trend!=="+0" ? C.success : data.trend.startsWith("-") ? C.error : C.textDim, fontSize:"10px" }}>{data.trend}</span>
+                  <span style={{ color:scoreColor(data.score), fontWeight:"700", fontSize:"12px" }}>{data.score + (tick%3===0&&domain==="D03"?-1:0)}%</span>
+                </div>
+              </div>
+              <div style={{ height:"6px", background:C.bg3, borderRadius:"3px", overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${data.score}%`, background:`linear-gradient(90deg, ${scoreColor(data.score)}88, ${scoreColor(data.score)})`, borderRadius:"3px", transition:"width 0.5s" }}/>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div style={s.sec}>실시간 이벤트 피드</div>
+          {events.map((ev, i) => (
+            <div key={i} style={{ padding:"8px 12px", marginBottom:"5px", background:C.bg3, border:`1px solid ${C.border}`, borderLeft:`3px solid ${ev.type==="GAP"?C.error:ev.type==="WARN"?C.warning:ev.type==="CLOSED"?C.success:C.accentDim}`, borderRadius:"3px" }}>
+              <div style={{ display:"flex", gap:"8px", alignItems:"center", marginBottom:"4px" }}>
+                <span style={{ color:C.textDim, fontSize:"10px" }}>{ev.time}</span>
+                <span style={{ color:ev.type==="GAP"?C.error:ev.type==="WARN"?C.warning:ev.type==="CLOSED"?C.success:C.accentDim, fontSize:"9px", fontWeight:"700", letterSpacing:"1px" }}>{ev.type}</span>
+              </div>
+              <div style={{ color:C.text, fontSize:"11px" }}>{ev.msg}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ ...s.card, marginTop:"8px" }}>
+        <div style={s.sec}>피드백 루프 자동화 상태</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"10px" }}>
+          {[
+            { label:"갭 탐지 → POA&M 생성",      status:"AUTO", color:C.success },
+            { label:"솔루션 API → 증거 수집",      status:"AUTO", color:C.success },
+            { label:"증거 → SSP 업데이트",          status:"AUTO", color:C.success },
+            { label:"POA&M 항목 자동 종료",         status:"AUTO", color:C.success },
+            { label:"규제 변경 모니터링",           status:"BETA", color:C.warning },
+            { label:"CVE 피드 → 취약점 연동",       status:"AUTO", color:C.success },
+            { label:"K-ISMS-P 카탈로그 갱신",       status:"수동", color:C.error },
+            { label:"경영진 보고 자동 생성",         status:"AUTO", color:C.success },
+          ].map((item, i) => (
+            <div key={i} style={{ padding:"10px", background:C.bg3, border:`1px solid ${C.border}`, borderRadius:"3px" }}>
+              <div style={{ color:C.text, fontSize:"10px", lineHeight:"1.4", marginBottom:"6px" }}>{item.label}</div>
+              <span style={{ background:`${item.color}22`, border:`1px solid ${item.color}55`, color:item.color, padding:"2px 8px", borderRadius:"2px", fontSize:"9px", fontWeight:"700" }}>{item.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ARCHITECTURE VIEW
+// ═══════════════════════════════════════════════════════════════
+function ArchView() {
+  return (
+    <div>
+      <div style={s.info}>
+        🏗️ 전체 시스템의 <strong>기술 아키텍처</strong>입니다. 각 레이어가 어떤 기술로 구현되고 어떻게 연결되는지 보여줍니다.
+      </div>
+
+      {[
+        {
+          layer:"Layer 1 · 데이터 원천", color:"#00bcd4",
+          desc:"OSCAL 카탈로그·프로파일이 모든 것의 기반",
+          components:[
+            { name:"NIST 800-53 OSCAL Catalog",  tech:"JSON/OSCAL",  note:"공식 제공" },
+            { name:"ISO 27001 OSCAL Catalog",     tech:"JSON/OSCAL",  note:"직접 작성 필요" },
+            { name:"K-ISMS-P OSCAL Catalog",      tech:"JSON/OSCAL",  note:"직접 작성 필요 (희소자산)" },
+            { name:"CAI 17-Domain Profile",       tech:"OSCAL Profile",note:"Trestle로 생성" },
+          ]
+        },
+        {
+          layer:"Layer 2 · 솔루션 매핑", color:"#66bb6a",
+          desc:"각 보안 솔루션의 OSCAL Component 라이브러리",
+          components:[
+            { name:"IAM Component (AD/Okta)",      tech:"OSCAL Component", note:"ac,ia 통제" },
+            { name:"Network Component (NGFW/ISE)", tech:"OSCAL Component", note:"sc 통제" },
+            { name:"SIEM Component (Splunk/Wazuh)",tech:"OSCAL Component", note:"au,ca 통제" },
+            { name:"VM Component (Tenable)",       tech:"OSCAL Component", note:"ra,si 통제" },
+          ]
+        },
+        {
+          layer:"Layer 3 · 통합 SSP", color:"#ab47bc",
+          desc:"Profile + Components → System Security Plan 자동 조립",
+          components:[
+            { name:"IBM Compliance Trestle",  tech:"Python CLI",    note:"SSP 자동 조립" },
+            { name:"OSCAL SSP.json",          tech:"OSCAL SSP",     note:"진실의 단일 원천" },
+            { name:"Markdown Policy Docs",    tech:"trestle render",note:"임직원·감사자용" },
+            { name:"Compliance Dashboard",    tech:"React/API",     note:"경영진 실시간 보고" },
+          ]
+        },
+        {
+          layer:"Layer 4 · API Contract", color:"#ffa726",
+          desc:"솔루션별 OSCAL 준수 API 계약 → 자동 증거 수집",
+          components:[
+            { name:"OpenAPI+OSCAL Contract",  tech:"OpenAPI 3.1",   note:"x-oscal 확장 필드" },
+            { name:"/compliance-status",      tech:"REST API",      note:"실시간 통제 상태" },
+            { name:"/evidence/collect",       tech:"REST API",      note:"감사 증거 자동 수집" },
+            { name:"/gap-remediation",        tech:"REST API",      note:"갭 조치 트리거" },
+          ]
+        },
+        {
+          layer:"Layer 5 · 자동화 파이프라인", color:"#ec407a",
+          desc:"CI/CD 기반 지속적 준수 검증 루프",
+          components:[
+            { name:"GitHub Actions",          tech:"YAML Workflow",  note:"일/주/월 자동 실행" },
+            { name:"oscal-cli validate",      tech:"CLI",            note:"스키마 유효성 검사" },
+            { name:"POA&M Auto-Update",       tech:"Python",         note:"갭 자동 추적" },
+            { name:"SAR Auto-Generate",       tech:"trestle",        note:"감사 보고서 자동 생성" },
+          ]
+        },
+      ].map((layer, i) => (
+        <div key={i} style={{ ...s.card, borderLeft:`4px solid ${layer.color}`, marginBottom:"12px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"12px" }}>
+            <div>
+              <div style={{ color:layer.color, fontWeight:"700", fontSize:"12px", letterSpacing:"1px", marginBottom:"3px" }}>{layer.layer}</div>
+              <div style={{ color:C.textDim, fontSize:"11px" }}>{layer.desc}</div>
+            </div>
+            {i < 4 && <div style={{ color:C.textMuted, fontSize:"18px" }}>↓</div>}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px" }}>
+            {layer.components.map((comp, j) => (
+              <div key={j} style={{ background:"#060c18", border:`1px solid ${C.border}`, borderRadius:"3px", padding:"10px" }}>
+                <div style={{ color:C.text, fontSize:"11px", fontWeight:"700", marginBottom:"4px" }}>{comp.name}</div>
+                <div style={{ display:"flex", gap:"4px", flexWrap:"wrap" }}>
+                  <span style={{ background:`${layer.color}22`, border:`1px solid ${layer.color}44`, color:layer.color, padding:"1px 6px", borderRadius:"2px", fontSize:"9px" }}>{comp.tech}</span>
+                </div>
+                <div style={{ color:C.textDim, fontSize:"10px", marginTop:"5px" }}>{comp.note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════
+const TABS = [
+  { id:"pipeline",   label:"PIPELINE",    component: PipelineView  },
+  { id:"gap",        label:"GAP 분석",    component: GapView       },
+  { id:"solution",   label:"솔루션 매핑", component: SolutionView  },
+  { id:"component",  label:"OSCAL COMP",  component: ComponentView },
+  { id:"contract",   label:"API CONTRACT",component: ContractView  },
+  { id:"monitor",    label:"MONITORING",  component: MonitorView   },
+  { id:"arch",       label:"ARCHITECTURE",component: ArchView      },
+];
+
+function App() {
+  const [activeTab, setActiveTab] = useState("pipeline");
+  const [crossState, setCrossState] = useState({});
+  const ActiveComponent = TABS.find(t => t.id === activeTab)?.component;
+
+  return (
+    <div style={s.app}>
+      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
+
+      <div style={s.hdr}>
+        <div>
+          <div style={{ color:C.accent, fontSize:"16px", fontWeight:"700", letterSpacing:"2px" }}>
+            COMPLIANCE INTELLIGENCE PIPELINE
+          </div>
+          <div style={{ color:C.textDim, fontSize:"10px", letterSpacing:"1px", marginTop:"3px" }}>
+            17 Domains · GAP → Solution → OSCAL Component → API Contract → Auto-Verify
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+          <span style={{ color:C.success, fontSize:"10px" }}>● LIVE</span>
+          <span style={{ background:C.bg3, border:`1px solid ${C.border}`, color:C.textDim, padding:"4px 12px", borderRadius:"2px", fontSize:"10px", letterSpacing:"1px" }}>
+            OSCAL 1.1.2
+          </span>
+        </div>
+      </div>
+
+      <div style={s.tabs}>
+        {TABS.map(tab => (
+          <button key={tab.id} style={s.tab(activeTab===tab.id)} onClick={() => setActiveTab(tab.id)}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={s.main}>
+        <ActiveComponent
+          onStage={(i) => setActiveTab(TABS[Math.min(i+1, TABS.length-1)].id)}
+          onSelectGap={(g) => setCrossState(prev => ({...prev, gap:g}))}
+          preselectedGap={crossState.gap}
+        />
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+
+    </script>
+  </body>
+</html>
